@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { mockUsers, mockSnippets } from '../data/mockData';
+import { githubService } from '../services/githubService';
+import { GitHubUser, GitHubRepository, GitHubLanguageStats } from '../types/github';
+import GitHubStats from '../components/Profile/GitHubStats';
+import GitHubRepositories from '../components/Profile/GitHubRepositories';
+import ContributionGraph from '../components/Profile/ContributionGraph';
 import { 
   Grid3X3, 
   Bookmark, 
@@ -21,16 +26,29 @@ import {
   Eye,
   Plus,
   UserPlus,
-  UserCheck
+  UserCheck,
+  RefreshCw
 } from 'lucide-react';
 import LoadingDots from '../components/UI/LoadingDots';
+import toast from 'react-hot-toast';
 
 const Profile: React.FC = () => {
   const { username } = useParams<{ username: string }>();
   const { profile: currentUserProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'posts' | 'saved' | 'tagged'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'repositories' | 'contributions' | 'saved'>('posts');
   const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [githubData, setGithubData] = useState<{
+    user: GitHubUser | null;
+    repositories: GitHubRepository[];
+    languageStats: GitHubLanguageStats;
+    loading: boolean;
+  }>({
+    user: null,
+    repositories: [],
+    languageStats: {},
+    loading: false
+  });
 
   // Find the profile user
   const profileUser = mockUsers.find(user => user.username === username) || currentUserProfile;
@@ -39,6 +57,46 @@ const Profile: React.FC = () => {
   // Get user's snippets
   const userSnippets = mockSnippets.filter(snippet => snippet.author.username === username);
 
+  // Fetch GitHub data
+  const fetchGitHubData = async () => {
+    if (!profileUser?.github_username) {
+      toast.error('No GitHub username found');
+      return;
+    }
+
+    setGithubData(prev => ({ ...prev, loading: true }));
+
+    try {
+      const [user, repositories, languageStats] = await Promise.all([
+        githubService.getUser(profileUser.github_username),
+        githubService.getUserRepositories(profileUser.github_username, {
+          sort: 'updated',
+          per_page: 50
+        }),
+        githubService.getUserLanguageStats(profileUser.github_username)
+      ]);
+
+      setGithubData({
+        user,
+        repositories,
+        languageStats,
+        loading: false
+      });
+
+      toast.success('GitHub data loaded successfully');
+    } catch (error) {
+      console.error('Failed to fetch GitHub data:', error);
+      toast.error('Failed to load GitHub data');
+      setGithubData(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  // Auto-fetch GitHub data on component mount if GitHub username exists
+  React.useEffect(() => {
+    if (profileUser?.github_username && !githubData.user) {
+      fetchGitHubData();
+    }
+  }, [profileUser?.github_username]);
   if (!profileUser) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -67,8 +125,9 @@ const Profile: React.FC = () => {
 
   const tabs = [
     { key: 'posts', label: 'Posts', icon: Grid3X3, count: userSnippets.length },
+    { key: 'repositories', label: 'Repositories', icon: Github, count: githubData.repositories.length },
+    { key: 'contributions', label: 'Activity', icon: Star, count: 0 },
     { key: 'saved', label: 'Saved', icon: Bookmark, count: 0 },
-    { key: 'tagged', label: 'Tagged', icon: User, count: 0 },
   ];
 
   const stats = [
@@ -123,6 +182,20 @@ const Profile: React.FC = () => {
             <div className="flex items-center space-x-3">
               {isOwnProfile ? (
                 <>
+                  {profileUser.github_username && (
+                    <button
+                      onClick={fetchGitHubData}
+                      disabled={githubData.loading}
+                      className="flex items-center space-x-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    >
+                      {githubData.loading ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Github className="h-4 w-4" />
+                      )}
+                      <span>Sync GitHub</span>
+                    </button>
+                  )}
                   <Link
                     to="/settings"
                     className="flex items-center space-x-2 px-6 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg text-sm font-medium transition-colors"
@@ -210,7 +283,7 @@ const Profile: React.FC = () => {
                   className="flex items-center space-x-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                 >
                   <Github className="h-4 w-4" />
-                  <span>GitHub</span>
+                  <span>{profileUser.github_username || 'GitHub'}</span>
                 </a>
               )}
               {profileUser.twitter_url && (
@@ -252,6 +325,14 @@ const Profile: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* GitHub Stats Section */}
+      {githubData.user && (
+        <GitHubStats 
+          user={githubData.user} 
+          languageStats={githubData.languageStats} 
+        />
+      )}
 
       {/* Tabs */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -349,6 +430,19 @@ const Profile: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'repositories' && (
+            <GitHubRepositories 
+              repositories={githubData.repositories}
+              loading={githubData.loading}
+            />
+          )}
+
+          {activeTab === 'contributions' && (
+            <ContributionGraph 
+              contributions={githubService.generateMockContributions()}
+            />
+          )}
+
           {activeTab === 'saved' && (
             <div className="text-center py-16">
               <div className="bg-gray-100 dark:bg-gray-700 rounded-full p-6 w-20 h-20 mx-auto mb-6">
@@ -359,20 +453,6 @@ const Profile: React.FC = () => {
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
                 Save posts to see them here.
-              </p>
-            </div>
-          )}
-
-          {activeTab === 'tagged' && (
-            <div className="text-center py-16">
-              <div className="bg-gray-100 dark:bg-gray-700 rounded-full p-6 w-20 h-20 mx-auto mb-6">
-                <User className="h-8 w-8 text-gray-400 mx-auto" />
-              </div>
-              <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-3">
-                No Tagged Posts
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Posts where you're tagged will appear here.
               </p>
             </div>
           )}

@@ -1,0 +1,198 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  username          String   @unique
+  full_name         String?
+  bio               String?
+  avatar_url        String?
+  location          String?
+  website_url       String?
+  company           String?
+  blog              String?
+  twitter_username  String?
+  
+  // GitHub specific fields
+  github_id         Int?     @unique
+  github_username   String?  @unique
+  github_url        String?
+  github_followers  Int?     @default(0)
+  github_following  Int?     @default(0)
+  github_public_repos Int?   @default(0)
+  github_public_gists Int?   @default(0)
+  github_created_at DateTime?
+  github_updated_at DateTime?
+  github_hireable   Boolean? @default(false)
+  github_type       String?  @default("User")
+  
+  // App specific fields
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  last_login        DateTime?
+  is_active         Boolean  @default(true)
+  
+  // Relations
+  snippets          Snippet[]
+  documentation     Documentation[]
+  followers         Follow[] @relation("UserFollowers")
+  following         Follow[] @relation("UserFollowing")
+  likes             Like[]
+  comments          Comment[]
+  repositories      Repository[]
+  
+  @@map("users")
+}
+
+model Repository {
+  id                String   @id @default(cuid())
+  github_id         Int      @unique
+  name              String
+  full_name         String
+  description       String?
+  html_url          String
+  clone_url         String
+  ssh_url           String
+  homepage          String?
+  language          String?
+  languages_url     String?
+  size              Int      @default(0)
+  stargazers_count  Int      @default(0)
+  watchers_count    Int      @default(0)
+  forks_count       Int      @default(0)
+  open_issues_count Int      @default(0)
+  is_private        Boolean  @default(false)
+  is_fork           Boolean  @default(false)
+  is_archived       Boolean  @default(false)
+  is_disabled       Boolean  @default(false)
+  default_branch    String   @default("main")
+  topics            String[] @default([])
+  license_name      String?
+  license_key       String?
+  
+  // GitHub timestamps
+  github_created_at DateTime
+  github_updated_at DateTime
+  github_pushed_at  DateTime?
+  
+  // App timestamps
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  
+  // Relations
+  user_id           String
+  user              User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
+  @@map("repositories")
+}
+
+model Snippet {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  code          String
+  language      String
+  is_public     Boolean  @default(true)
+  tags          String[] @default([])
+  
+  // Stats
+  likes_count   Int      @default(0)
+  views_count   Int      @default(0)
+  
+  // Timestamps
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  
+  // Relations
+  author_id     String
+  author        User     @relation(fields: [author_id], references: [id], onDelete: Cascade)
+  likes         Like[]
+  comments      Comment[]
+  
+  @@map("snippets")
+}
+
+model Documentation {
+  id            String   @id @default(cuid())
+  title         String
+  content       String
+  description   String?
+  thumbnail_url String?
+  category      String
+  tags          String[] @default([])
+  is_public     Boolean  @default(true)
+  
+  // Stats
+  likes_count   Int      @default(0)
+  views_count   Int      @default(0)
+  
+  // Timestamps
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  
+  // Relations
+  author_id     String
+  author        User     @relation(fields: [author_id], references: [id], onDelete: Cascade)
+  likes         Like[]
+  comments      Comment[]
+  
+  @@map("documentation")
+}
+
+model Follow {
+  id           String   @id @default(cuid())
+  follower_id  String
+  following_id String
+  created_at   DateTime @default(now())
+  
+  follower     User     @relation("UserFollowing", fields: [follower_id], references: [id], onDelete: Cascade)
+  following    User     @relation("UserFollowers", fields: [following_id], references: [id], onDelete: Cascade)
+  
+  @@unique([follower_id, following_id])
+  @@map("follows")
+}
+
+model Like {
+  id              String         @id @default(cuid())
+  user_id         String
+  snippet_id      String?
+  documentation_id String?
+  created_at      DateTime       @default(now())
+  
+  user            User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  snippet         Snippet?       @relation(fields: [snippet_id], references: [id], onDelete: Cascade)
+  documentation   Documentation? @relation(fields: [documentation_id], references: [id], onDelete: Cascade)
+  
+  @@unique([user_id, snippet_id])
+  @@unique([user_id, documentation_id])
+  @@map("likes")
+}
+
+model Comment {
+  id              String         @id @default(cuid())
+  content         String
+  user_id         String
+  snippet_id      String?
+  documentation_id String?
+  parent_id       String?
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+  
+  user            User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  snippet         Snippet?       @relation(fields: [snippet_id], references: [id], onDelete: Cascade)
+  documentation   Documentation? @relation(fields: [documentation_id], references: [id], onDelete: Cascade)
+  parent          Comment?       @relation("CommentReplies", fields: [parent_id], references: [id])
+  replies         Comment[]      @relation("CommentReplies")
+  
+  @@map("comments")
+}
